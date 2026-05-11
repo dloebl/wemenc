@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 )
 
 // Codec represents the audio codec used in the WEM file.
@@ -20,12 +21,14 @@ const (
 
 // WEMHeader contains the metadata and audio data for a WEM file.
 type WEMHeader struct {
-	Codec        Codec
-	Channels     int
-	SampleRate   int
-	TotalSamples int
-	PreSkip      int
-	Packets      []OpusPacket
+	Codec           Codec
+	Channels        int
+	SampleRate      int
+	AvgBytesPerSec  uint32
+	TotalSamples    int
+	PreSkip         int
+	SamplesPerFrame uint16
+	Packets         []OpusPacket
 }
 
 // EncodeOptions configures the encoding process.
@@ -56,8 +59,8 @@ func EncodeToWEM(r io.Reader, w io.Writer, opt EncodeOptions) error {
 	}
 
 	// 1. Run FFmpeg to get Ogg Opus
-	// We read from stdin and write Ogg to stdout
-	cmd := exec.Command(ffmpeg, "-i", "pipe:0", "-c:a", libOpusOrOpus(), "-b:a", opt.Bitrate, "-application", "audio", "-f", "ogg", "pipe:1")
+	// We force mono and 48kHz for voice compatibility
+	cmd := exec.Command(ffmpeg, "-i", "pipe:0", "-ac", "1", "-ar", "48000", "-c:a", libOpusOrOpus(), "-b:a", opt.Bitrate, "-application", "voip", "-f", "ogg", "pipe:1")
 	cmd.Stdin = r
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -80,14 +83,23 @@ func EncodeToWEM(r io.Reader, w io.Writer, opt EncodeOptions) error {
 		return fmt.Errorf("ffmpeg error: %v (stderr: %s)", err, stderr.String())
 	}
 
+	// Calculate AvgBytesPerSec from bitrate string
+	var bitrate uint32 = 64000
+	fmt.Sscanf(opt.Bitrate, "%dk", &bitrate)
+	if strings.HasSuffix(opt.Bitrate, "k") {
+		bitrate *= 1000
+	}
+
 	// 3. Construct WEM structure
 	header := WEMHeader{
-		Codec:        opt.Codec,
-		Channels:     channels,
-		SampleRate:   48000,
-		TotalSamples: lastGranulePos,
-		PreSkip:      preSkip,
-		Packets:      packets,
+		Codec:           opt.Codec,
+		Channels:        channels,
+		SampleRate:      48000,
+		AvgBytesPerSec:  bitrate / 8,
+		TotalSamples:    lastGranulePos,
+		PreSkip:         preSkip,
+		SamplesPerFrame: 960,
+		Packets:         packets,
 	}
 
 	// 4. Write WEM to the provided writer
@@ -103,8 +115,9 @@ func WriteWEM(w io.Writer, h WEMHeader) error {
 
 	seekSize := uint32(len(h.Packets) * 2)
 	fmtSize := uint32(36)
+	hashSize := uint32(16)
 	cbSize := uint16(fmtSize - 18)
-	riffSize := 4 + 8 + fmtSize + 8 + seekSize + 8 + dataSize
+	riffSize := 4 + 8 + fmtSize + 8 + hashSize + 8 + seekSize + 8 + dataSize
 
 	// RIFF Header
 	binary.Write(w, binary.BigEndian, []byte("RIFF"))
@@ -117,19 +130,24 @@ func WriteWEM(w io.Writer, h WEMHeader) error {
 	binary.Write(w, binary.LittleEndian, uint16(h.Codec))
 	binary.Write(w, binary.LittleEndian, uint16(h.Channels))
 	binary.Write(w, binary.LittleEndian, uint32(h.SampleRate))
-	binary.Write(w, binary.LittleEndian, uint32(0)) // AvgBytesPerSec
+	binary.Write(w, binary.LittleEndian, uint32(h.AvgBytesPerSec))
 	binary.Write(w, binary.LittleEndian, uint16(0)) // BlockAlign
 	binary.Write(w, binary.LittleEndian, uint16(0)) // BitsPerSample
 	binary.Write(w, binary.LittleEndian, cbSize)
 
 	// Extra data
-	binary.Write(w, binary.LittleEndian, uint16(0))              // samples per frame
-	binary.Write(w, binary.LittleEndian, uint32(0))              // unknown
-	binary.Write(w, binary.LittleEndian, uint32(h.TotalSamples)) // total samples
-	binary.Write(w, binary.LittleEndian, uint32(len(h.Packets))) // table count
-	binary.Write(w, binary.LittleEndian, uint16(h.PreSkip))      // pre-skip
-	binary.Write(w, binary.LittleEndian, uint8(1))               // version
-	binary.Write(w, binary.LittleEndian, uint8(0))               // mapping
+	binary.Write(w, binary.LittleEndian, uint16(h.SamplesPerFrame)) // samples per frame
+	binary.Write(w, binary.LittleEndian, uint32(0x00004101))       // unknown (Opus constant)
+	binary.Write(w, binary.LittleEndian, uint32(h.TotalSamples))    // total samples
+	binary.Write(w, binary.LittleEndian, uint32(len(h.Packets)))    // table count
+	binary.Write(w, binary.LittleEndian, uint16(h.PreSkip))         // pre-skip
+	binary.Write(w, binary.LittleEndian, uint8(1))                  // version
+	binary.Write(w, binary.LittleEndian, uint8(1))                  // mapping (1 for opus)
+
+	// hash chunk
+	binary.Write(w, binary.BigEndian, []byte("hash"))
+	binary.Write(w, binary.LittleEndian, hashSize)
+	binary.Write(w, binary.LittleEndian, [16]byte{}) // dummy hash
 
 	// seek chunk
 	binary.Write(w, binary.BigEndian, []byte("seek"))
