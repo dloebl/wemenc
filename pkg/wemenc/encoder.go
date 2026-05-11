@@ -30,8 +30,9 @@ type WEMHeader struct {
 
 // EncodeOptions configures the encoding process.
 type EncodeOptions struct {
-	Codec   Codec
-	Bitrate string // e.g., "64k", "128k"
+	Codec      Codec
+	Bitrate    string // e.g., "64k", "128k"
+	FFmpegPath string // Path to ffmpeg binary, if empty uses "ffmpeg" from PATH
 }
 
 // EncodeToWEM encodes the audio from the input reader and writes the WEM data to the output writer.
@@ -49,9 +50,14 @@ func EncodeToWEM(r io.Reader, w io.Writer, opt EncodeOptions) error {
 		opt.Bitrate = "64k"
 	}
 
+	ffmpeg := opt.FFmpegPath
+	if ffmpeg == "" {
+		ffmpeg = "ffmpeg"
+	}
+
 	// 1. Run FFmpeg to get Ogg Opus
 	// We read from stdin and write Ogg to stdout
-	cmd := exec.Command("ffmpeg", "-i", "pipe:0", "-c:a", libOpusOrOpus(), "-b:a", opt.Bitrate, "-application", "audio", "-f", "ogg", "pipe:1")
+	cmd := exec.Command(ffmpeg, "-i", "pipe:0", "-c:a", libOpusOrOpus(), "-b:a", opt.Bitrate, "-application", "audio", "-f", "ogg", "pipe:1")
 	cmd.Stdin = r
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
