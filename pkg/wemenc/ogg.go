@@ -66,7 +66,7 @@ func parseOgg(r io.Reader) ([]OpusPacket, int, int, int, error) {
 						}
 					} else if bytes.HasPrefix(currentPacket, []byte("OpusTags")) {
 						// ignore
-					} else {
+					} else if len(currentPacket) > 3 {
 						samples := getOpusSamples(currentPacket)
 						packets = append(packets, OpusPacket{
 							Data:    currentPacket,

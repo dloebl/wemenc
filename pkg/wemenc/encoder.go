@@ -142,7 +142,7 @@ func WriteWEM(w io.Writer, h WEMHeader) error {
 	binary.Write(w, binary.LittleEndian, uint32(len(h.Packets)))    // table count
 	binary.Write(w, binary.LittleEndian, uint16(h.PreSkip))         // pre-skip
 	binary.Write(w, binary.LittleEndian, uint8(1))                  // version
-	binary.Write(w, binary.LittleEndian, uint8(1))                  // mapping (1 for opus)
+	binary.Write(w, binary.LittleEndian, uint8(0))                  // mapping (0 for mono/stereo)
 
 	// hash chunk
 	binary.Write(w, binary.BigEndian, []byte("hash"))
