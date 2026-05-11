@@ -8,8 +8,19 @@ import (
 	"os/exec"
 )
 
+// Codec represents the audio codec used in the WEM file.
+type Codec uint16
+
+const (
+	CodecPCM    Codec = 0x0001
+	CodecADPCM  Codec = 0x0002
+	CodecVorbis Codec = 0xFFFF
+	CodecOpus   Codec = 0x3041
+)
+
 // WEMHeader contains the metadata and audio data for a WEM file.
 type WEMHeader struct {
+	Codec        Codec
 	Channels     int
 	SampleRate   int
 	TotalSamples int
@@ -19,12 +30,21 @@ type WEMHeader struct {
 
 // EncodeOptions configures the encoding process.
 type EncodeOptions struct {
+	Codec   Codec
 	Bitrate string // e.g., "64k", "128k"
 }
 
 // EncodeToWEM encodes the audio from the input reader and writes the WEM data to the output writer.
 // It uses ffmpeg for the Opus encoding step.
 func EncodeToWEM(r io.Reader, w io.Writer, opt EncodeOptions) error {
+	if opt.Codec == 0 {
+		opt.Codec = CodecOpus
+	}
+
+	if opt.Codec != CodecOpus {
+		return fmt.Errorf("codec %v is not supported yet", opt.Codec)
+	}
+
 	if opt.Bitrate == "" {
 		opt.Bitrate = "64k"
 	}
@@ -56,6 +76,7 @@ func EncodeToWEM(r io.Reader, w io.Writer, opt EncodeOptions) error {
 
 	// 3. Construct WEM structure
 	header := WEMHeader{
+		Codec:        opt.Codec,
 		Channels:     channels,
 		SampleRate:   48000,
 		TotalSamples: lastGranulePos,
@@ -87,7 +108,7 @@ func WriteWEM(w io.Writer, h WEMHeader) error {
 	// fmt chunk
 	binary.Write(w, binary.BigEndian, []byte("fmt "))
 	binary.Write(w, binary.LittleEndian, fmtSize)
-	binary.Write(w, binary.LittleEndian, uint16(0x3041)) // OPUSWW
+	binary.Write(w, binary.LittleEndian, uint16(h.Codec))
 	binary.Write(w, binary.LittleEndian, uint16(h.Channels))
 	binary.Write(w, binary.LittleEndian, uint32(h.SampleRate))
 	binary.Write(w, binary.LittleEndian, uint32(0)) // AvgBytesPerSec
