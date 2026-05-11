@@ -1,4 +1,4 @@
-package main
+package wemenc
 
 import (
 	"bytes"
@@ -8,13 +8,13 @@ import (
 )
 
 type OggPage struct {
-	HeaderType    byte
-	GranulePos    int64
-	Serial        uint32
-	Sequence      uint32
-	Checksum      uint32
-	Segments      []byte
-	Data          []byte
+	HeaderType byte
+	GranulePos int64
+	Serial     uint32
+	Sequence   uint32
+	Checksum   uint32
+	Segments   []byte
+	Data       []byte
 }
 
 type OpusPacket struct {
@@ -42,12 +42,8 @@ func parseOgg(r io.Reader) ([]OpusPacket, int, int, int, error) {
 			return nil, 0, 0, 0, fmt.Errorf("invalid ogg signature")
 		}
 
-		// headerType := header[5]
 		granulePos := int64(binary.LittleEndian.Uint64(header[6:14]))
 		lastGranulePos = int(granulePos)
-		// serial := binary.LittleEndian.Uint32(header[14:18])
-		// sequence := binary.LittleEndian.Uint32(header[18:22])
-		// checksum := binary.LittleEndian.Uint32(header[22:26])
 		segmentCount := int(header[26])
 
 		lacingValues := make([]byte, segmentCount)
@@ -86,43 +82,46 @@ func parseOgg(r io.Reader) ([]OpusPacket, int, int, int, error) {
 	return packets, preSkip, channels, lastGranulePos, nil
 }
 
-// Simplified version of opus_packet_get_samples_per_frame from vgmstream
 func getOpusSamples(data []byte) int {
 	if len(data) < 1 {
 		return 0
 	}
-	
-	fs := 48000
-	var audiosize int
-	if data[0]&0x80 != 0 {
-		audiosize = int((data[0] >> 3) & 0x3)
-		audiosize = (fs << audiosize) / 400
-	} else if (data[0] & 0x60) == 0x60 {
-		if data[0]&0x08 != 0 {
-			audiosize = fs / 50
-		} else {
-			audiosize = fs / 100
-		}
-	} else {
-		audiosize = int((data[0] >> 3) & 0x3)
-		if audiosize == 3 {
-			audiosize = fs * 60 / 1000
-		} else {
-			audiosize = (fs << audiosize) / 100
-		}
-	}
-
-	count := int(data[0] & 0x3)
-	var nbframes int
+	config := data[0] >> 3
+	count := data[0] & 3
+	var frames int
 	if count == 0 {
-		nbframes = 1
-	} else if count != 3 {
-		nbframes = 2
-	} else if len(data) < 2 {
-		nbframes = 0
+		frames = 1
+	} else if count <= 2 {
+		frames = 2
 	} else {
-		nbframes = int(data[1] & 0x3F)
+		if len(data) < 2 {
+			return 0
+		}
+		frames = int(data[1] & 0x3F)
 	}
 
-	return audiosize * nbframes
+	var samplesPerFrame int
+	switch {
+	case config < 12: // SILK
+		ms := 0
+		switch config & 3 {
+		case 0: ms = 10
+		case 1: ms = 20
+		case 2: ms = 40
+		case 3: ms = 60
+		}
+		samplesPerFrame = (48000 * ms) / 1000
+	case config < 16: // Hybrid
+		ms := 10
+		if config&1 != 0 {
+			ms = 20
+		}
+		samplesPerFrame = (48000 * ms) / 1000
+	case config < 32: // CELT
+		samplesPerFrame = (48000 << (config & 3)) / 400
+	default:
+		return 0
+	}
+
+	return samplesPerFrame * frames
 }

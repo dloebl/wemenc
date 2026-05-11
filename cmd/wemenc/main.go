@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+
+	"github.com/dloebl/wemenc/pkg/wemenc"
 )
 
 func main() {
@@ -34,11 +36,11 @@ func main() {
 	}
 	defer outFile.Close()
 
-	opt := EncodeOptions{
+	opt := wemenc.EncodeOptions{
 		Bitrate: *bitrateFlag,
 	}
 
-	if err := EncodeToWEM(inFile, outFile, opt); err != nil {
+	if err := wemenc.EncodeToWEM(inFile, outFile, opt); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}

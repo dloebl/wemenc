@@ -30,7 +30,7 @@ jobs:
         chmod +x vgmstream-bin/vgmstream-cli
 
     - name: Build wemenc
-      run: go build -v -o wemenc .
+      run: go build -v -o wemenc ./cmd/wemenc
 
     - name: Test Encoding and Verification
       run: |

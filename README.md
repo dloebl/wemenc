@@ -19,7 +19,7 @@
 Clone the repository and build the binary:
 
 ```bash
-go build -o wemenc .
+go build -o wemenc ./cmd/wemenc
 ```
 
 ## Usage
