@@ -90,13 +90,16 @@ func EncodeToWEM(r io.Reader, w io.Writer, opt EncodeOptions) error {
 		bitrate *= 1000
 	}
 
+	// Calculate playable samples
+	totalSamples := lastGranulePos - preSkip
+
 	// 3. Construct WEM structure
 	header := WEMHeader{
 		Codec:           opt.Codec,
 		Channels:        channels,
 		SampleRate:      48000,
 		AvgBytesPerSec:  bitrate / 8,
-		TotalSamples:    lastGranulePos,
+		TotalSamples:    totalSamples,
 		PreSkip:         preSkip,
 		SamplesPerFrame: 960,
 		Packets:         packets,
@@ -143,6 +146,7 @@ func WriteWEM(w io.Writer, h WEMHeader) error {
 	binary.Write(w, binary.LittleEndian, uint16(h.PreSkip))         // pre-skip
 	binary.Write(w, binary.LittleEndian, uint8(1))                  // version
 	binary.Write(w, binary.LittleEndian, uint8(0))                  // mapping (0 for mono/stereo)
+
 
 	// hash chunk
 	binary.Write(w, binary.BigEndian, []byte("hash"))
