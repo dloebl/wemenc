@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg unzip libvorbis-dev libmpg123-dev libopenal-dev
+
+    - name: Install vgmstream
+      run: |
+        wget https://github.com/vgmstream/vgmstream/releases/download/r2083/vgmstream-linux-cli.zip
+        unzip vgmstream-linux-cli.zip -d vgmstream-bin
+        echo "$(pwd)/vgmstream-bin" >> $GITHUB_PATH
+        chmod +x vgmstream-bin/vgmstream-cli
+
+    - name: Build wemenc
+      run: go build -v -o wemenc .
+
+    - name: Test Encoding and Verification
+      run: |
+        # Generate a test WAV
+        ffmpeg -f lavfi -i "sine=frequency=440:duration=2" -ar 48000 -ac 1 test_input.wav
+        
+        # Encode to WEM
+        ./wemenc -i test_input.wav -o test_output.wem -b 64k
+        
+        # Verify with vgmstream-cli
+        vgmstream-cli test_output.wem -o test_decoded.wav
+        
+        # Check if vgmstream-cli succeeded and produced output
+        if [ ! -f test_decoded.wav ]; then
+          echo "Verification failed: test_decoded.wav not found"
+          exit 1
+        fi
+        
+        echo "CI Verification Successful!"
