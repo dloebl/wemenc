@@ -20,7 +20,25 @@ func main() {
 	
 	fmt.Printf("Encoding %s to %s (bitrate: %s)...\n", *inputFlag, *outputFlag, *bitrateFlag)
 	
-	if err := encodeToWEM(*inputFlag, *outputFlag, *bitrateFlag); err != nil {
+	inFile, err := os.Open(*inputFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening input: %v\n", err)
+		os.Exit(1)
+	}
+	defer inFile.Close()
+
+	outFile, err := os.Create(*outputFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating output: %v\n", err)
+		os.Exit(1)
+	}
+	defer outFile.Close()
+
+	opt := EncodeOptions{
+		Bitrate: *bitrateFlag,
+	}
+
+	if err := EncodeToWEM(inFile, outFile, opt); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
