@@ -58,10 +58,16 @@ func EncodeToWEM(r io.Reader, w io.Writer, opt EncodeOptions) error {
 		ffmpeg = "ffmpeg"
 	}
 
+	// Calculate bitrate for header
+	var bitrate uint32 = 96000
+	fmt.Sscanf(opt.Bitrate, "%dk", &bitrate)
+	if strings.HasSuffix(opt.Bitrate, "k") {
+		bitrate *= 1000
+	}
+
 	// 1. Run FFmpeg to get Ogg Opus
-	// We force mono, 48kHz, and 20ms frames for Wwise compatibility.
-	// Using 'audio' application as it's the Wwise default.
-	cmd := exec.Command(ffmpeg, "-i", "pipe:0", "-ac", "1", "-ar", "48000", "-c:a", libOpusOrOpus(), "-b:a", opt.Bitrate, "-application", "audio", "-frame_duration", "20", "-f", "ogg", "pipe:1")
+	// We force mono, 48kHz, CBR, and 20ms frames for maximum compatibility.
+	cmd := exec.Command(ffmpeg, "-i", "pipe:0", "-ac", "1", "-ar", "48000", "-c:a", libOpusOrOpus(), "-b:a", opt.Bitrate, "-vbr", "off", "-application", "audio", "-frame_duration", "20", "-f", "ogg", "pipe:1")
 	cmd.Stdin = r
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -84,17 +90,12 @@ func EncodeToWEM(r io.Reader, w io.Writer, opt EncodeOptions) error {
 		return fmt.Errorf("ffmpeg error: %v (stderr: %s)", err, stderr.String())
 	}
 
-	// Calculate AvgBytesPerSec from bitrate string
-	var bitrate uint32 = 64000
-	fmt.Sscanf(opt.Bitrate, "%dk", &bitrate)
-	if strings.HasSuffix(opt.Bitrate, "k") {
-		bitrate *= 1000
-	}
-
-	// Calculate playable samples
-	// Wwise-Opus files usually expect TotalSamples to be (PacketCount * 960) - PreSkip
-	// We use 960 because we force 20ms frames in FFmpeg.
+	// Calculate playable samples accurately
+	// Wwise-Opus expects (PacketCount * 960) - PreSkip
 	totalSamples := (len(packets) * 960) - preSkip
+	if totalSamples < 0 {
+		totalSamples = 0
+	}
 
 	// 3. Construct WEM structure
 	header := WEMHeader{
@@ -123,7 +124,7 @@ func WriteWEM(w io.Writer, h WEMHeader) error {
 	fmtSize := uint32(36)
 	hashSize := uint32(16)
 	cbSize := uint16(fmtSize - 18)
-	// RIFF size is total file size - 8 bytes (RIFF + Size fields)
+	// RIFF size is total file size - 8 bytes
 	riffSize := 4 + (8 + fmtSize) + (8 + hashSize) + (8 + seekSize) + (8 + dataSize)
 
 	// RIFF Header
@@ -150,7 +151,6 @@ func WriteWEM(w io.Writer, h WEMHeader) error {
 	binary.Write(w, binary.LittleEndian, uint16(h.PreSkip))         // pre-skip
 	binary.Write(w, binary.LittleEndian, uint8(1))                  // version
 	binary.Write(w, binary.LittleEndian, uint8(0))                  // mapping (0 for mono/stereo)
-
 
 	// hash chunk
 	binary.Write(w, binary.BigEndian, []byte("hash"))
