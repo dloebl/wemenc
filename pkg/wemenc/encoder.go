@@ -50,7 +50,7 @@ func EncodeToWEM(r io.Reader, w io.Writer, opt EncodeOptions) error {
 	}
 
 	if opt.Bitrate == "" {
-		opt.Bitrate = "64k"
+		opt.Bitrate = "96k"
 	}
 
 	ffmpeg := opt.FFmpegPath
@@ -59,8 +59,9 @@ func EncodeToWEM(r io.Reader, w io.Writer, opt EncodeOptions) error {
 	}
 
 	// 1. Run FFmpeg to get Ogg Opus
-	// We force mono and 48kHz for voice compatibility
-	cmd := exec.Command(ffmpeg, "-i", "pipe:0", "-ac", "1", "-ar", "48000", "-c:a", libOpusOrOpus(), "-b:a", opt.Bitrate, "-application", "voip", "-f", "ogg", "pipe:1")
+	// We force mono, 48kHz, and 20ms frames for Wwise compatibility.
+	// Using 'audio' application as it's the Wwise default.
+	cmd := exec.Command(ffmpeg, "-i", "pipe:0", "-ac", "1", "-ar", "48000", "-c:a", libOpusOrOpus(), "-b:a", opt.Bitrate, "-application", "audio", "-frame_duration", "20", "-f", "ogg", "pipe:1")
 	cmd.Stdin = r
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -120,7 +121,8 @@ func WriteWEM(w io.Writer, h WEMHeader) error {
 	fmtSize := uint32(36)
 	hashSize := uint32(16)
 	cbSize := uint16(fmtSize - 18)
-	riffSize := 4 + 8 + fmtSize + 8 + hashSize + 8 + seekSize + 8 + dataSize
+	// RIFF size is total file size - 8 bytes (RIFF + Size fields)
+	riffSize := 4 + (8 + fmtSize) + (8 + hashSize) + (8 + seekSize) + (8 + dataSize)
 
 	// RIFF Header
 	binary.Write(w, binary.BigEndian, []byte("RIFF"))
