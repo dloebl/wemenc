@@ -124,8 +124,25 @@ func WriteWEM(w io.Writer, h WEMHeader) error {
 	fmtSize := uint32(36)
 	hashSize := uint32(16)
 	cbSize := uint16(fmtSize - 18)
+
+	// Helper to calculate padding needed to align to 4 bytes
+	padding := func(size uint32) uint32 {
+		if size%4 == 0 {
+			return 0
+		}
+		return 4 - (size % 4)
+	}
+
+	fmtPadding := padding(fmtSize)
+	hashPadding := padding(hashSize)
+	seekPadding := padding(seekSize)
+
 	// RIFF size is total file size - 8 bytes
-	riffSize := 4 + (8 + fmtSize) + (8 + hashSize) + (8 + seekSize) + (8 + dataSize)
+	riffSize := 4 +
+		(8 + fmtSize + fmtPadding) +
+		(8 + hashSize + hashPadding) +
+		(8 + seekSize + seekPadding) +
+		(8 + dataSize)
 
 	// RIFF Header
 	binary.Write(w, binary.BigEndian, []byte("RIFF"))
@@ -151,17 +168,26 @@ func WriteWEM(w io.Writer, h WEMHeader) error {
 	binary.Write(w, binary.LittleEndian, uint16(h.PreSkip))         // pre-skip
 	binary.Write(w, binary.LittleEndian, uint8(1))                  // version
 	binary.Write(w, binary.LittleEndian, uint8(0))                  // mapping (0 for mono/stereo)
+	if fmtPadding > 0 {
+		w.Write(make([]byte, fmtPadding))
+	}
 
 	// hash chunk
 	binary.Write(w, binary.BigEndian, []byte("hash"))
 	binary.Write(w, binary.LittleEndian, hashSize)
 	binary.Write(w, binary.LittleEndian, [16]byte{}) // dummy hash
+	if hashPadding > 0 {
+		w.Write(make([]byte, hashPadding))
+	}
 
 	// seek chunk
 	binary.Write(w, binary.BigEndian, []byte("seek"))
 	binary.Write(w, binary.LittleEndian, seekSize)
 	for _, p := range h.Packets {
 		binary.Write(w, binary.LittleEndian, uint16(len(p.Data)))
+	}
+	if seekPadding > 0 {
+		w.Write(make([]byte, seekPadding))
 	}
 
 	// data chunk
