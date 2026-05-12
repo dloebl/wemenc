@@ -75,7 +75,7 @@ func EncodeToWEM(r io.Reader, w io.Writer, opt EncodeOptions) error {
 	}
 
 	// 2. Parse Ogg stream
-	packets, preSkip, channels, lastGranulePos, err := parseOgg(stdout)
+	packets, preSkip, channels, _, err := parseOgg(stdout)
 	if err != nil {
 		return fmt.Errorf("ogg parse error: %v (ffmpeg stderr: %s)", err, stderr.String())
 	}
@@ -92,7 +92,9 @@ func EncodeToWEM(r io.Reader, w io.Writer, opt EncodeOptions) error {
 	}
 
 	// Calculate playable samples
-	totalSamples := lastGranulePos - preSkip
+	// Wwise-Opus files usually expect TotalSamples to be (PacketCount * 960) - PreSkip
+	// We use 960 because we force 20ms frames in FFmpeg.
+	totalSamples := (len(packets) * 960) - preSkip
 
 	// 3. Construct WEM structure
 	header := WEMHeader{

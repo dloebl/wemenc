@@ -7,16 +7,6 @@ import (
 	"io"
 )
 
-type OggPage struct {
-	HeaderType byte
-	GranulePos int64
-	Serial     uint32
-	Sequence   uint32
-	Checksum   uint32
-	Segments   []byte
-	Data       []byte
-}
-
 type OpusPacket struct {
 	Data    []byte
 	Samples int
@@ -43,9 +33,12 @@ func parseOgg(r io.Reader) ([]OpusPacket, int, int, int, error) {
 		}
 
 		granulePos := int64(binary.LittleEndian.Uint64(header[6:14]))
-		lastGranulePos = int(granulePos)
-		segmentCount := int(header[26])
+		// Only update lastGranulePos if it's a valid positive value
+		if granulePos > 0 {
+			lastGranulePos = int(granulePos)
+		}
 
+		segmentCount := int(header[26])
 		lacingValues := make([]byte, segmentCount)
 		if _, err := io.ReadFull(r, lacingValues); err != nil {
 			return nil, 0, 0, 0, err
@@ -57,6 +50,8 @@ func parseOgg(r io.Reader) ([]OpusPacket, int, int, int, error) {
 				return nil, 0, 0, 0, err
 			}
 			currentPacket = append(currentPacket, segment...)
+			
+			// In Ogg, a packet ends if the segment length is < 255.
 			if l < 255 {
 				if len(currentPacket) > 0 {
 					if bytes.HasPrefix(currentPacket, []byte("OpusHead")) {
@@ -66,7 +61,7 @@ func parseOgg(r io.Reader) ([]OpusPacket, int, int, int, error) {
 						}
 					} else if bytes.HasPrefix(currentPacket, []byte("OpusTags")) {
 						// ignore
-					} else if len(currentPacket) > 3 {
+					} else if len(currentPacket) > 8 { // Filter out very small bookkeeping/padding packets
 						samples := getOpusSamples(currentPacket)
 						packets = append(packets, OpusPacket{
 							Data:    currentPacket,
